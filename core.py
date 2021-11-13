@@ -62,6 +62,7 @@ class RedisHelper:
                  use_strict=False,
                  db=0,
                  password=None,
+                 pub_sub_channel='fm104.5',
                  ):
 
         pool = redis.ConnectionPool(host=host,
@@ -75,26 +76,19 @@ class RedisHelper:
         else:
             self.conn = redis.Redis(connection_pool=pool)  # 連接redis服務器
 
-        self.default_pub_sub_channel = 'fm104.5'  # 訂閱頻道
+        self.pub_sub_channel = pub_sub_channel  # 訂閱頻道
         self.threads = []  # storing subscribe thread
 
     # def conn(self):
     #     return self.conn
 
-    def publish(self, msg, pub_sub_channel=''):  # 定義發佈函數，msg為發佈消息
-        if not pub_sub_channel:
-            pub_sub_channel= self.default_pub_sub_channel
-        
-        self.conn.publish(pub_sub_channel, msg)
-        return True
+    def publish(self, msg):  # 定義發佈函數，msg為發佈消息
+        return self.conn.publish(self.pub_sub_channel, msg)
 
-    def publish_pyobj(self, msg, pub_sub_channel=''):  # 定義發佈函數，msg為發佈消息
-        if not pub_sub_channel:
-            pub_sub_channel= self.default_pub_sub_channel
-        self.conn.publish(pub_sub_channel, pickle.dumps(msg))
-        return True
+    def publish_pyobj(self, msg):  # 定義發佈函數，msg為發佈消息
+        return self.conn.publish(self.pub_sub_channel, pickle.dumps(msg))
 
-    def subscribe(self, callback_handler, pub_sub_channel='', **kwargs):
+    def subscribe(self, callback_handler, **kwargs):
         """
         The whole script will get blocked if there are no new messages.
         msg:
@@ -102,23 +96,16 @@ class RedisHelper:
          {'type': 'message', 'pattern': None, 'channel': b'fm104.5', 'data': b'\x80\x04\x95\x0c\x00\x00\x00\x00\x00\x00\x00}\x94\x8c\x03abc\x94K{s.'}
         
         """
-        if not pub_sub_channel:
-            pub_sub_channel = self.default_pub_sub_channel
-
         sub = self.conn.pubsub()  # 定義接收函數，接收消息
-        sub.subscribe(pub_sub_channel)
+        sub.subscribe(self.pub_sub_channel)
 
         # 等待消息
-
         for new_msg in sub.listen():
             callback_handler(new_msg, **kwargs)
 
-    def test_handler(self, msg):
-        print(pickle.loads(msg['data']))
-
-    def subscribe_by_thread(self, callback_handler, pub_sub_channel=self.default_pub_sub_channel, **kwargs):
+    def subscribe_by_thread(self, callback_handler, **kwargs):
         sub = self.conn.pubsub()  # 定義接收函數，接收消息
-        sub.subscribe(**{pub_sub_channel: callback_handler})
+        sub.subscribe(**{self.pub_sub_channel: callback_handler})
         self.threads.append(sub.run_in_thread(sleep_time=0.001))
 
     def stop_subscribe(self):
