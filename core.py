@@ -2,42 +2,20 @@
 """
 Created on Tue Dec  1 20:22:46 2020
 
-@author: tHOMAS
+@author: bransonngai
 """
 import json
-import pickle
-from socket import gethostname
-
 import redis
+import pickle
 
-from .secret import local_redis_secret, algoable_redis_secret, cookie_redis_secret, local_no_password_secret
-from BATrader.ba_constants import MachineName
+from .secret import (
+    local_redis_secret,
+    algoable_redis_secret,
+    cookie_redis_secret,
+    local_no_password_secret
+)
 
-
-# Redis holds key:value pairs , support GET, SET and DEL and serveral additional commands
-# Keys are always strings
-# values can be different data types
-
-# MSET Lebanon Beirut Norway Oslo France Paris
-# MGET Lebanon Norway Bahamas
-
-# HSET realpython url "https://realpython.com/"
-# HSET realpython github realpython
-# HSET realpython fullname "Real Python"
-
-# HMSET pypa url "https://www.pypa.io/" github pypa fullname "Python Packaging Authority"
-# HGETALL pypa
-
-# Hashes, Sets, Lists
-
-def get_local_config():
-    if gethostname() == MachineName.ALGOABLE:
-        print('Running in algoable. Using algoable local redis')
-        return algoable_redis_secret
-    elif gethostname() == MachineName.TINYA or gethostname() == MachineName.TINYB:
-        return local_no_password_secret
-    else:
-        return local_redis_secret
+from BATrader.ba_constants import MachineName, machine_name
 
 
 class RedisHelper:
@@ -57,19 +35,28 @@ class RedisHelper:
         equals to AUTH
     """
 
-    def __init__(self, host='localhost',
-                 port=6379,
-                 use_strict=False,
+    def __init__(self,
+                 config_name: str = 'local',
                  db=0,
-                 password=None,
+                 use_strict=False,
                  pub_sub_channel='fm104.5',
                  ):
 
-        pool = redis.ConnectionPool(host=host,
-                                    port=port,
-                                    db=db,
-                                    password=
-                                    password)
+        if config_name == 'local':
+            __loaded_config = local_redis_secret
+        else:
+            if machine_name == MachineName.ALGOABLE:
+                print('Running in algoable. Using algoable local redis')
+                __loaded_config = algoable_redis_secret
+            elif machine_name in [MachineName.TINYA, MachineName.TINYB]:
+                __loaded_config = local_no_password_secret
+
+        pool = redis.ConnectionPool(
+            db=db,
+            host=__loaded_config['db_host'],
+            port=__loaded_config['db_port'],
+            password=__loaded_config['db_password'],
+        )
 
         if use_strict:
             self.conn = redis.StrictRedis(connection_pool=pool)
@@ -78,9 +65,6 @@ class RedisHelper:
 
         self.pub_sub_channel = pub_sub_channel  # 訂閱頻道
         self.threads = []  # storing subscribe thread
-
-    # def conn(self):
-    #     return self.conn
 
     def publish(self, msg):  # 定義發佈函數，msg為發佈消息
         return self.conn.publish(self.pub_sub_channel, msg)
@@ -126,7 +110,10 @@ class RedisHelper:
     def get(self, key):
         value = self.conn.get(key)
         if value:
-            return pickle.loads(value)
+            try:
+                return pickle.loads(value)
+            except AttributeError:
+                return ''
         return ''
 
     def delete(self, key: str):
@@ -168,51 +155,10 @@ class RedisHelper:
             self.conn.flushdb()
             print('Flushed.')
 
+_redis_manager: RedisHelper = None
 
-class LocalConfigRedis(RedisHelper):
-    """ Cookie local redis, use on local directly """
-
-    def __init__(self):
-        config = get_local_config()
-        super(LocalConfigRedis, self).__init__(host=config['db_host'],
-                                               port=config['db_port'],
-                                               password=config['db_password'])
-
-
-class CookieConfigRedis(RedisHelper):
-    """ Cookie local redis, use on local directly """
-
-    def __init__(self):
-        config = cookie_redis_secret
-        super(CookieConfigRedis, self).__init__(host=config['db_host'],
-                                                port=config['db_port'],
-                                                password=config['db_password'])
-
-
-class RedisWithConfig(RedisHelper):
-    """ Cookie local redis, use on local directly """
-
-    def __init__(self, config_name: str):
-        config = None
-        if config_name == 'algoable':
-            config = algoable_redis_secret
-        elif config_name == 'cookie':
-            config = cookie_redis_secret
-        elif config_name == 'local':
-            config = local_redis_secret
-        else:
-            print('CONFIG name no found')
-            return
-
-        super(RedisWithConfig, self).__init__(host=config['db_host'],
-                                              port=config['db_port'],
-                                              password=config['db_password'])
-
-
-def return_redis_instance_by_name(config_name: str):
-    """
-    Trying to migrate with Redis
-
-    Redis seems hv securities breach in production server, stop using it first
-    """
-    return RedisWithConfig(config_name)
+def get_redis_manager():
+    global _redis_manager
+    if not _redis_manager:
+        _redis_manager = RedisHelper()
+    return _redis_manager

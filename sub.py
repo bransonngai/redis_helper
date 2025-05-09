@@ -2,7 +2,7 @@
 """
 Created on Wed Dec  2 03:05:14 2020
 
-@author: tHOMAS
+@author: bransonngai
 """
 from redis_helper import local_instance
 import pickle
